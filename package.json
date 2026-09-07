@@ -1,0 +1,22 @@
+{
+  "name": "musfiraai-cli",
+  "version": "1.2.1",
+  "description": "Request free custom tools, automations, AI agents, and n8n workflows from Musfiraai — right from your terminal.",
+  "bin": {
+    "musfiraai": "./bin/musfiraai.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["musfiraai", "automation", "n8n", "ai-agent", "cli", "free-tools"],
+  "author": "Musfiraai",
+  "license": "MIT",
+  "homepage": "https://musfiraai.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/musman550/musfiraai-cli.git"
+  },
+  "files": [
+    "bin"
+  ]
+}
