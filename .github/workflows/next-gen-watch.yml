@@ -1,0 +1,81 @@
+name: Daily Next-Gen Watcher
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # daily at 05:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check latest @modelcontextprotocol/sdk version
+        id: mcp
+        run: |
+          LATEST=$(npm view @modelcontextprotocol/sdk version)
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+      - name: Check latest @supabase/supabase-js version
+        id: supabase
+        run: |
+          LATEST=$(npm view @supabase/supabase-js version 2>/dev/null || echo "unknown")
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+      - name: Check current pinned versions in this repo
+        id: current
+        run: |
+          MCP_CURRENT=$(node -pe "try{require('./package.json').dependencies['@modelcontextprotocol/sdk']||'none'}catch(e){'none'}" 2>/dev/null || echo "none")
+          echo "mcp_current=$MCP_CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Check recent MCP spec releases
+        id: spec
+        run: |
+          curl -s https://api.github.com/repos/modelcontextprotocol/modelcontextprotocol/releases?per_page=3 \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" > /tmp/spec_releases.json
+          echo "titles<<EOF" >> "$GITHUB_OUTPUT"
+          jq -r '.[].name' /tmp/spec_releases.json >> "$GITHUB_OUTPUT" 2>/dev/null || echo "(could not fetch)" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether anything is actually new
+        id: decide
+        run: |
+          MCP_CURRENT_RAW="${{ steps.current.outputs.mcp_current }}"
+          MCP_CURRENT_CLEAN=$(echo "$MCP_CURRENT_RAW" | tr -d '^~')
+          MCP_LATEST="${{ steps.mcp.outputs.latest }}"
+          if [ "$MCP_CURRENT_CLEAN" != "none" ] && [ "$MCP_CURRENT_CLEAN" != "$MCP_LATEST" ]; then
+            echo "found_new=true" >> "$GITHUB_OUTPUT"
+          else
+            RECENT=$(jq -r '[.[] | select((now - (.published_at | fromdateiso8601)) < 90000)] | length' /tmp/spec_releases.json 2>/dev/null || echo "0")
+            if [ "$RECENT" -gt "0" ]; then
+              echo "found_new=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "found_new=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Open issue only if something is actually new
+        if: steps.decide.outputs.found_new == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mcpLatest = `${{ steps.mcp.outputs.latest }}`;
+            const mcpCurrent = `${{ steps.current.outputs.mcp_current }}`;
+            const specTitles = `${{ steps.spec.outputs.titles }}`;
+
+            const body = `**Daily automated check — ${new Date().toISOString().slice(0,10)}**
+
+            - Latest \`@modelcontextprotocol/sdk\` on npm: \`${mcpLatest}\`
+            - Currently pinned in this repo: \`${mcpCurrent}\`
+            - Recent MCP spec releases: \n${specTitles}
+
+            This is an automated flag for review — it does not change any code by itself. If the SDK version is genuinely newer, Dependabot will also open a separate PR to bump it. Review this issue to see if the *spec itself* gained a new capability worth adding (new tool types, new transport, etc.) beyond a routine version bump.`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Next-gen watch — ${new Date().toISOString().slice(0,10)}`,
+              body,
+              labels: ['automated-watch']
+            });

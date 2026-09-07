@@ -1,0 +1,57 @@
+name: Auto-publish to npm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bin/**'
+      - 'index.js'
+      - 'package.json'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Skip if this commit was the version bump itself
+        id: check
+        run: |
+          if git log -1 --pretty=%B | grep -q "chore: bump version"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip == 'false'
+        run: npm install
+
+      - name: Syntax check
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          for f in bin/*.js index.js; do
+            if [ -f "$f" ]; then node --check "$f"; fi
+          done
+
+      - name: Bump patch version
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          git config user.name "musfiraai-bot"
+          git config user.email "bot@musfiraai.com"
+          npm version patch -m "chore: bump version to %s [skip ci]"
+          git push origin main --follow-tags
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip == 'false'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
