@@ -57,7 +57,7 @@ jobs:
 
       - name: Open issue only if something is actually new
         if: steps.decide.outputs.found_new == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const mcpLatest = `${{ steps.mcp.outputs.latest }}`;
